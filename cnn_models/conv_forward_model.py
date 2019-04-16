@@ -169,7 +169,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 bucket_size=None, quantizationFunctionToUse='uniformLinearScaling',
                 backprop_quantization_style='none', estimate_quant_grad_every=1, add_gradient_noise=False,
                 ask_teacher_strategy=('always', None), quantize_first_and_last_layer=True,
-                mix_with_differentiable_quantization=False):
+                mix_with_differentiable_quantization=False, loss_function=None, eval_function=None):
 
     # backprop_quantization_style determines how to modify the gradients to take into account the
     # quantization function. Specifically, one can use 'none', where gradients are not modified,
@@ -287,7 +287,15 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                         quantize_weights_model(model)
 
                 model.zero_grad()
-                print_loss, curr_c_teach, curr_c_total = cnn_hf.forward_and_backward(model, data, idx_minibatch, epoch,
+
+                if loss_function:
+                    loss_function(model, data, use_distillation_loss=use_distillation_loss,
+                                  teacher_model=teacher_model,
+                                  ask_teacher_strategy=ask_teacher_strategy,
+                                  temperature_distillation=2,
+                                  return_more_info=True)
+                else:
+                    print_loss, curr_c_teach, curr_c_total = cnn_hf.forward_and_backward(model, data, idx_minibatch, epoch,
                                             use_distillation_loss=use_distillation_loss,
                                             teacher_model=teacher_model,
                                             ask_teacher_strategy=ask_teacher_strategy,
@@ -335,11 +343,16 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
             curr_percentages_asked_teacher = count_asked_teacher/count_asked_total if count_asked_total != 0 else 0
             percentages_asked_teacher.append(curr_percentages_asked_teacher)
             losses_epochs.append(last_loss_saved)
-            curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
+
+            if eval_function:
+                curr_pred_accuracy = eval_function()
+            else:
+                curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
+
             pred_accuracy_epochs.append(curr_pred_accuracy)
             print(' === Epoch: {} - prediction accuracy {:2f}% === '.format(epoch + 1, curr_pred_accuracy*100))
 
-            if mix_with_differentiable_quantization and epoch != start_epoch + epochs_to_train - 1:
+            if mix_with_dixfferentiable_quantization and epoch != start_epoch + epochs_to_train - 1:
                 print('=== Starting Differentiable Quantization epoch === ')
                 #the diff quant step is not done at the last epoch, so we end on a quantized distillation epoch
                 model_state_dict = optimize_quantization_points(model, train_loader, test_loader, new_learning_rate,

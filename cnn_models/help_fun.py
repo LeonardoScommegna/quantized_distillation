@@ -6,6 +6,10 @@ import time
 import numpy as np
 import helpers.functions as mhf
 import random
+import sys
+import os
+import warnings
+import argparse
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -25,6 +29,71 @@ def time_forward_pass(model, train_loader):
 
     end_time = time.time()
     return end_time - start_time
+
+def additional_namespace_arguments(parser):
+
+    parser.set_defaults(hi_local_max_radius=6)
+    parser.set_defaults(min_second_threshold=15)
+    parser.set_defaults(mean_shift_bandwidth=5.5)
+    parser.set_defaults(seeds_filtering_mode='soft')
+    parser.set_defaults(max_expected_cells=10000)
+    parser.set_defaults(max_cell_diameter=16.0)
+    parser.set_defaults(verbose=False)
+    parser.set_defaults(save_image=False)
+    parser.set_defaults(evaluation=True)
+    parser.set_defaults(do_icp=True)
+    parser.set_defaults(manifold_distance=40)
+
+def blockPrint():
+    sys.stdout = open(os.devnull, 'w')
+
+# Restore
+def enablePrint():
+    sys.stdout = sys.__stdout__
+
+def bcfind_evaluateModel(model, testLoader):
+
+    sigmoid = nn.Sigmoid()
+
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.
+                                     ArgumentDefaultsHelpFormatter)
+    additional_namespace_arguments(parser)
+    args = parser.parse_args()
+
+    model.eval()
+    precisions = []
+    recalls = []
+    F1s = []
+
+    for idx_minibatch, data in enumerate(testLoader):
+        img, gt, centers_df, img_name   = data 
+
+        # get the inputs
+
+        if USE_CUDA:
+            img = img.cuda()
+
+        with torch.set_grad_enabled(False):
+            model_output = model(img)
+            blockPrint()
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                precision, recall, F1, TP_inside, FP_inside, FN_inside = evaluate_metrics(
+                    sigmoid(model_output).squeeze(0),
+                    centers_df.squeeze(0), args)
+
+        precisions.append(precision)
+        recalls.append(recall)
+        F1s.append(F1)
+
+    mean_precision = np.mean(np.array(precisions))
+
+    mean_recall = np.mean(np.array(recalls))
+
+    mean_F1 = np.mean(np.array(F1s))
+
+    return torch.tensor(mean_F1)
 
 
 def evaluateModel(model, testLoader, fastEvaluation=True, maxExampleFastEvaluation=10000, k=1):
@@ -156,6 +225,132 @@ def forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
         return loss.data[0], count_asked_teacher, count_total
     else:
         return loss.data[0]
+
+def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
+                                use_distillation_loss=False, teacher_model=None,
+                                temperature_distillation=2, ask_teacher_strategy='always',
+                                return_more_info=False):
+
+    #TODO: return_more_info is just there for backward compatibility. A big refactoring is due here, and there one should
+    #remove the return_more_info flag
+    
+    if use_distillation_loss is True and teacher_model is None:
+        raise ValueError('To compute distillation loss you need to pass the teacher model')
+
+    if not isinstance(ask_teacher_strategy, tuple):
+        ask_teacher_strategy = (ask_teacher_strategy, )
+
+    img_patches, gt_patches, mask = batch
+    # wrap them in Variable
+    # inputs, labels = Variable(inputs), Variable(labels)
+    if USE_CUDA:
+        img_patches = img_patches.cuda()
+        gt_patches = gt_patches.cuda()
+        mask = mask.cuda()
+
+    # weighted_map creation -> add guard if use special loss 
+    weighted_map = (mask * (args.soma_weight-1)) + 1
+
+    # forward + backward + optimize
+    outputs = model(img_patches)
+
+    count_asked_teacher = 0
+
+    if use_distillation_loss:
+        #if cutoff_entropy_value_distillation is not None, we use the distillation loss only on the examples
+        #whose entropy is higher than the cutoff.
+
+        weight_teacher_loss = 0.7
+
+        if 'entropy' in ask_teacher_strategy[0].lower():
+            prob_out = torch.nn.functional.sigmoid(outputs).data
+            entropy = [mhf.get_entropy(prob_out[idx_b, :]) for idx_b in range(prob_out.size(0))]
+
+        if ask_teacher_strategy[0].lower() == 'always':
+            mask_distillation_loss = torch.ByteTensor([True]*outputs.size(0))
+        elif ask_teacher_strategy[0].lower() == 'cutoff_entropy':
+            cutoff_entropy_value_distillation = ask_teacher_strategy[1]
+            mask_distillation_loss = torch.ByteTensor([entr > cutoff_entropy_value_distillation for entr in entropy])
+        elif ask_teacher_strategy[0].lower() == 'random_entropy':
+            max_entropy = math.log2(outputs.size(1)) #max possible entropy that happens with uniform distribution
+            mask_distillation_loss = torch.ByteTensor([random.random() < entr/max_entropy for entr in entropy])
+        elif ask_teacher_strategy[0].lower() == 'incorrect_labels':
+            _, predictions = outputs.max(dim=1)
+            mask_distillation_loss = (predictions != labels).data.cpu()
+        else:
+            raise ValueError('ask_teacher_strategy is incorrectly formatted')
+
+        index_distillation_loss = torch.arange(0, outputs.size(0))[mask_distillation_loss.view(-1, 1)].long()
+        inverse_idx_distill_loss = torch.arange(0, outputs.size(0))[1-mask_distillation_loss.view(-1, 1)].long()
+        if USE_CUDA:
+            index_distillation_loss = index_distillation_loss.cuda()
+            inverse_idx_distill_loss = inverse_idx_distill_loss.cuda()
+
+        # this criterion is the distillation criterion according to Hinton's paper:
+        # "Distilling the Knowledge in a Neural Network", Hinton et al.
+
+        # softmaxFunction, logSoftmaxFunction, KLDivLossFunction  = nn.Softmax(dim=1), nn.LogSoftmax(dim=1), nn.KLDivLoss()
+
+        # if USE_CUDA:
+        #     softmaxFunction, logSoftmaxFunction = softmaxFunction.cuda(), logSoftmaxFunction.cuda(),
+        #     KLDivLossFunction = KLDivLossFunction.cuda()
+
+        if index_distillation_loss.size() != torch.Size():
+            count_asked_teacher = index_distillation_loss.numel()
+            # if index_distillation_loss is not empty
+            volatile_inputs = Variable(img_patches.data[index_distillation_loss, :], requires_grad=False)
+            if USE_CUDA: volatile_inputs = volatile_inputs.cuda()
+
+            outputsTeacher = teacher_model(volatile_inputs).detach()
+            volatile_wmap = weighted_map.view(-1)[index_distillation_loss, :]
+            volatile_outputs_student = outputs.view(-1)[index_distillation_loss, :]
+            volatile_gt = gt_patches(-1)[index_distillation_loss, :]
+            partial_dist_loss = torch.mean( volatile_wmap *
+                                            F.binary_cross_entropy_with_logits(
+                                                volatile_outputs_student / temperature_distillation,
+                                                outputsTeacher.view(-1) / temperature_distillation,
+                                                reduce='none'))
+            
+            loss_masked = weight_teacher_loss * temperature_distillation**2 * partial_dist_loss
+
+            loss_masked += (1-weight_teacher_loss) * torch.mean( volatile_wmap *
+                                                                 F.binary_cross_entropy_with_logits(
+                                                                     volatile_outputs_student,
+                                                                     volatile_gt,
+                                                                     reduce='none'))
+
+        else:
+            loss_masked = 0
+
+        if inverse_idx_distill_loss.size() != torch.Size():
+            #if inverse_idx_distill is not empty
+
+            no_dist_wmap = weighted_map.view(-1)[inverse_idx_distill_loss, :]
+            no_dist_outputs_student = outputs.view(-1)[inverse_idx_distill_loss, :]
+            no_dist_gt = gt_patches(-1)[inverse_idx_distill_loss, :]
+
+            loss_normal = torch.mean( no_dist_wmap *
+                                            F.binary_cross_entropy_with_logits(
+                                                no_dist_outputs_student,
+                                                no_dist_gt,
+                                                reduce='none'))
+        else:
+            loss_normal = 0
+        loss = loss_masked + loss_normal
+    else:
+        loss = torch.mean( weighted_map.view(-1) *
+                           F.binary_cross_entropy_with_logits(
+                               outputs.view(-1),
+                               gt_patches.view(-1), reduce='none'))
+
+    loss.backward()
+
+    if return_more_info:
+        count_total = inputs.size(0)
+        return loss.data[0], count_asked_teacher, count_total
+    else:
+        return loss.data[0]
+
 
 def add_gradient_noise(model, idx_batch, epoch, number_minibatches_per_epoch):
     # Adding random gaussian noise as in the paper "Adding gradient noise improves learning
