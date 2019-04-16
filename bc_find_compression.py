@@ -10,7 +10,7 @@ import torch
 import pandas as pd
 from torch.utils.data import DataLoader
 import cnn_models.conv_forward_model as convForwModel
-
+from cnn_models.help_fun import bcfind_evaluateModel, bcfind_forward_and_backward
 
 
 import model_manager
@@ -183,7 +183,10 @@ def main():
                                                          'quantizeWeights': True,
                                                          'numBits': args.n_bit,
                                                          'bucket_size': 256,
-                                                         'quantize_first_and_last_layer': False},
+                                                         'quantize_first_and_last_layer': False,
+                                                         'loss_function': bcfind_forward_and_backward,
+                                                         'eval_function': bcfind_evaluateModel
+                                                         },
                                train_loader=train_loader, test_loader=test_loader)
 
 

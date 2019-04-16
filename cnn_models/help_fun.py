@@ -199,7 +199,9 @@ def forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
             count_asked_teacher = index_distillation_loss.numel()
             # if index_distillation_loss is not empty
             volatile_inputs = Variable(inputs.data[index_distillation_loss, :], requires_grad=False)
+
             if USE_CUDA: volatile_inputs = volatile_inputs.cuda()
+
             outputsTeacher = teacher_model(volatile_inputs).detach()
             loss_masked = weight_teacher_loss * temperature_distillation**2 * KLDivLossFunction(
                     logSoftmaxFunction(outputs[index_distillation_loss, :]/ temperature_distillation),
