@@ -3,9 +3,15 @@ import sys
 sys.path.append(path.abspath('../bcfind'))
 from bcfind.train_deconvolver.models import FC_teacher_max_p
 from bcfind.train_deconvolver.models import FC_student
-
+from bcfind.train_deconvolver.DataReader import *
 import os
 import argparse
+import torch
+import pandas as pd
+from torch.utils.data import DataLoader
+import cnn_models.conv_forward_model as convForwModel
+
+
 
 import model_manager
 
@@ -40,7 +46,7 @@ def get_parser():
                         help="""Directory contaning the collection
                             of gt markers""")
 
-    parser.add_argument('model_save_path', metavar='model_save_path', type=str,
+    parser.add_argument('models_save_path', metavar='models_save_path', type=str,
                         help="""directory where the models will be saved""")
 
     parser.add_argument('device', metavar='device', type=str,
@@ -63,15 +69,25 @@ def get_parser():
                         default=100,
                         help="""number of training epochs""")
 
-    parser.add_argument('-k', '--kernel_size', dest='kernel_size', type=int,
+    parser.add_argument('-k_teacher', '--kernel_size_teacher', dest='kernel_size_teacher', type=int,
                         default=3,
-                        help="""size of the cubic kernel, provide only an integer e.
+                        help="""size of the cubic kernel of the teacher, provide only an integer e.
                         g. kernel_size 3""")
 
-    parser.add_argument('-f', '--initial_filters', dest='initial_filters',
+    parser.add_argument('-f_teacher', '--initial_filters_teacher', dest='initial_filters_teacher',
                         type=int,
                         default=4,
-                        help="""Number of filters in the initial conv layer""")
+                        help="""Number of filters in the initial conv layer for the teacher""")
+
+    parser.add_argument('-k_student', '--kernel_size_student', dest='kernel_size_student', type=int,
+                        default=3,
+                        help="""size of the cubic kernel of the student, provide only an integer e.
+                            g. kernel_size 3""")
+
+    parser.add_argument('-f_student', '--initial_filters_student', dest='initial_filters_student',
+                        type=int,
+                        default=4,
+                        help="""Number of filters in the initial conv layer for the student""")
 
     parser.add_argument('--lr', dest='lr', type=float,
                         default=0.001,
@@ -85,80 +101,90 @@ def get_parser():
                         default=None,
                         help="""name of the directory where  model will
                         be stored""")
+    parser.add_argument('-first', dest='first_time', action ='store_true',
+                        help="pass this argument the first you train a model")
+    parser.add_argument('--model_manager_save_file', dest = 'model_manger_save_file', type =str,
+                        default=None)
+    parser.add_argument('-sn', '--student_name', dest="student_name", type = str,
+                        default=None,
+                        help =""" Name of the student model""")
+
+    parser.set_defaults(first_time =False)
     return parser
 
 
-def additional_namespace_arguments(parser):
-    '''
-    parser.add_argument('-r', '--hi_local_max_radius', metavar='r', dest='hi_local_max_radius',
-                        action='store', type=float, default=6,
-                        help='Radius of the seed selection ball (r)')
 
-    parser.add_argument('-fl', '--floating_point', dest='floating_point', action='store_true',
-                        help='If true, cell centers are saved in floating point.')
-
-    parser.add_argument('-m', '--min_second_threshold', metavar='min_second_threshold', dest='min_second_threshold',
-                        action='store', type=int, default=15,
-                        help="""If the foreground (second threshold in multi-Kapur) is below this value
-                                   then the substack is too dark and assumed to contain no soma""")
-    parser.add_argument('-loc', '--local', dest='local', action='store_true',
-                        help='Perform local processing by dividing the volume in 8 parts.')
-    # parser.set_defaults(local=True)
-    parser.add_argument('-ts', '--seeds_filtering_mode', dest='seeds_filtering_mode',
-                        action='store', type=str, default='soft',
-                        help="Type of seed selection ball ('hard' or 'soft')")
-    parser.add_argument('-R', '--mean_shift_bandwidth', metavar='R', dest='mean_shift_bandwidth',
-                        action='store', type=float, default=5.5,
-                        help='Radius of the mean shift kernel (R)')
-    parser.add_argument('-s', '--save_image', dest='save_image', action='store_true',
-                        help='Save debugging substack for visual inspection (voxels above threshold and colorized clusters).')
-    parser.add_argument('-M', '--max_expected_cells', metavar='max_expected_cells', dest='max_expected_cells',
-                        action='store', type=int, default=10000,
-                        help="""Max number of cells that may appear in a substack""")
-    parser.add_argument('-p', '--pair_id', dest='pair_id',
-                        action='store', type=str,
-                        help="id of the pair of views, e.g 000_090. A folder with this name will be created inside outdir/substack_id")
-    parser.add_argument('-D', '--max_cell_diameter', dest='max_cell_diameter', type=float, default=16.0,
-                        help='Maximum diameter of a cell')
-    parser.add_argument('-d', '--manifold-distance', dest='manifold_distance', type=float, default=None,
-                        help='Maximum distance from estimated manifold to be included as a prediction')
-    parser.add_argument('-c', '--curve', dest='curve', action='store_true', help='Make a recall-precision curve.')
-    parser.add_argument('-g', '--ground_truth_folder', dest='ground_truth_folder', type=str, default=None,
-                        help='folder containing merged marker files (for multiview images)')
-    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='Verbose output.')
-    parser.add_argument('--do_icp', dest='do_icp', action='store_true',
-                        help='Use the ICP matching procedure to evaluate the performance')
-
-    parser.add_argument('-e', dest='evaluation', action='store_true')
-    '''
-    parser.set_defaults(hi_local_max_radius=6)
-    #parser.set_defaults()
-    parser.set_defaults(min_second_threshold =15)
-    parser.set_defaults(mean_shift_bandwidth = 5.5)
-    parser.set_defaults(seeds_filtering_mode='soft')
-    parser.set_defaults(max_expected_cells = 10000)
-    parser.set_defaults(max_cell_diameter = 16.0)
-    parser.set_defaults(verbose = False)
-    parser.set_defaults(save_image=False)
-    parser.set_defaults(evaluation=True)
-    parser.set_defaults(do_icp= True)
-    parser.set_defaults(manifold_distance = 40)
-
-
-def blockPrint():
-    sys.stdout = open(os.devnull, 'w')
-
-# Restore
-def enablePrint():
-    sys.stdout = sys.__stdout__
-
-def criterium_to_save():
-    return True
 
 def main():
     parser = get_parser()
-    additional_namespace_arguments(parser)
     args = parser.parse_args()
+    USE_CUDA = torch.cuda.is_available()
+
+    try:
+        os.mkdir(args.models_save_path)
+    except:
+        pass
+    save_file_manger = 'model_manager_bcfind.tst' if not args.model_manger_save_file else args.model_manger_save_file
+    bcfind_manager = model_manager.ModelManager(save_file_manger, 'model_manager', create_new_model_manager=args.first_time )
+
+    save_path = os.path.join(args.models_save_path, args.name_dir)
+    for x in bcfind_manager.list_models():
+        if bcfind_manager.get_num_training_runs(x) >= 1:
+            s = '{}; Last prediction acc: {}, Best prediction acc: {}'.format(x,
+                                                                              imagenet_manager.load_metadata(x)[1][
+                                                                                  'predictionAccuracy'][-1],
+                                                                              max(imagenet_manager.load_metadata(x)[1][
+                                                                                      'predictionAccuracy']))
+            print(s)
+
+    try:
+        os.mkdir(save_path)
+    except:
+        pass
+
+    '''Train Data Loader'''
+    train_dataframe = pd.read_csv(args.train_csv_path, comment="#",
+                                  index_col=0, dtype={"img_name": str})
+    patch_size = int(str(pd.read_csv(args.train_csv_path, nrows=1, header=None).
+                         take([0])).split("=")[-1])  # workaround
+    train_dataset = DataReaderWeight(args.img_dir, args.gt_dir,
+                                     args.weight_dir,
+                                     train_dataframe, patch_size)
+    train_loader = DataLoader(train_dataset, args.batch_size,
+                              shuffle=True, num_workers=args.n_workers)
+
+    '''Validation/Test Data Loader'''
+
+    val_test_dataframe = pd.read_csv(args.val_test_csv_path, comment="#",
+                                     index_col=0, dtype={"name": str})
+    test_dataframe = val_test_dataframe[(val_test_dataframe['split'] == 'VAL')]
+
+    test_dataset = DataReaderSubstackTest(args.img_dir, args.gt_dir, args.marker_dir, test_dataframe)
+
+    test_loader = DataLoader(test_dataset, 1, shuffle=False, num_workers=args.n_workers)
+
+    ''' Teacher and Student networks'''
+
+    teacher= FC_teacher_max_p(args.initial_filters_teacher, k_conv=args.kernel_size_teacher).cuda()
+
+    teacher.load_state_dict(torch.load(args.teacher_path, map_location=args.device))
+
+    student = FC_student(args.initial_filters_student, k_conv=args.kernel_size_student).cuda()
+
+    student_model_name = args.student_name+'{}'.format(args.n_bit)
+
+    distillationOptions = {}
+
+    bcfind_manager.train_model(student, model_name=student_model_name,
+                               train_function=convForwModel.train_model,
+                               arguments_train_function={'epochs_to_train': args.epochs,
+                                                         'use_distillation_loss': True,
+                                                         'teacher_model': teacher,
+                                                         'quantizeWeights': True,
+                                                         'numBits': args.n_bit,
+                                                         'bucket_size': 256,
+                                                         'quantize_first_and_last_layer': False},
+                               train_loader=train_loader, test_loader=test_loader)
 
 
 
