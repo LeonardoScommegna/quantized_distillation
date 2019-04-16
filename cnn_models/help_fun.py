@@ -10,6 +10,7 @@ import sys
 import os
 import warnings
 import argparse
+import torch.nn.functional as F
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -59,6 +60,7 @@ def bcfind_evaluateModel(model, testLoader):
                                      formatter_class=argparse.
                                      ArgumentDefaultsHelpFormatter)
     additional_namespace_arguments(parser)
+
     args = parser.parse_args()
 
     model.eval()
@@ -100,6 +102,7 @@ def evaluateModel(model, testLoader, fastEvaluation=True, maxExampleFastEvaluati
 
     'if fastEvaluation is True, it will only check a subset of *maxExampleFastEvaluation* images of the test set'
 
+    print('dentro compute loss')
 
     model.eval()
     correctClass = 0
@@ -228,10 +231,10 @@ def forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
     else:
         return loss.data[0]
 
-def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
+def bcfind_forward_and_backward(model, batch,
                                 use_distillation_loss=False, teacher_model=None,
                                 temperature_distillation=2, ask_teacher_strategy='always',
-                                return_more_info=False):
+                                return_more_info=False, soma_weight =1):
 
     #TODO: return_more_info is just there for backward compatibility. A big refactoring is due here, and there one should
     #remove the return_more_info flag
@@ -251,7 +254,7 @@ def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
         mask = mask.cuda()
 
     # weighted_map creation -> add guard if use special loss 
-    weighted_map = (mask * (args.soma_weight-1)) + 1
+    weighted_map = (mask * (soma_weight-1)) + 1
 
     # forward + backward + optimize
     outputs = model(img_patches)
@@ -276,14 +279,11 @@ def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
         elif ask_teacher_strategy[0].lower() == 'random_entropy':
             max_entropy = math.log2(outputs.size(1)) #max possible entropy that happens with uniform distribution
             mask_distillation_loss = torch.ByteTensor([random.random() < entr/max_entropy for entr in entropy])
-        elif ask_teacher_strategy[0].lower() == 'incorrect_labels':
-            _, predictions = outputs.max(dim=1)
-            mask_distillation_loss = (predictions != labels).data.cpu()
+
         else:
             raise ValueError('ask_teacher_strategy is incorrectly formatted')
-
-        index_distillation_loss = torch.arange(0, outputs.size(0))[mask_distillation_loss.view(-1, 1)].long()
-        inverse_idx_distill_loss = torch.arange(0, outputs.size(0))[1-mask_distillation_loss.view(-1, 1)].long()
+        index_distillation_loss = torch.arange(0, outputs.size(0))[mask_distillation_loss.long()]
+        inverse_idx_distill_loss = torch.arange(0, outputs.size(0))[1-mask_distillation_loss.long()]
         if USE_CUDA:
             index_distillation_loss = index_distillation_loss.cuda()
             inverse_idx_distill_loss = inverse_idx_distill_loss.cuda()
@@ -300,22 +300,27 @@ def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
         if index_distillation_loss.size() != torch.Size():
             count_asked_teacher = index_distillation_loss.numel()
             # if index_distillation_loss is not empty
+
             volatile_inputs = Variable(img_patches.data[index_distillation_loss, :], requires_grad=False)
-            if USE_CUDA: volatile_inputs = volatile_inputs.cuda()
+
+            if USE_CUDA:
+                volatile_inputs = volatile_inputs.cuda()
 
             outputsTeacher = teacher_model(volatile_inputs).detach()
-            volatile_wmap = weighted_map.view(-1)[index_distillation_loss, :]
-            volatile_outputs_student = outputs.view(-1)[index_distillation_loss, :]
-            volatile_gt = gt_patches(-1)[index_distillation_loss, :]
+            volatile_wmap = weighted_map[index_distillation_loss]
+            volatile_outputs_student = outputs[index_distillation_loss]
+            volatile_gt = gt_patches[index_distillation_loss]
+            #print(volatile_outputs_student.shape)
+
             partial_dist_loss = torch.mean( volatile_wmap *
                                             F.binary_cross_entropy_with_logits(
-                                                volatile_outputs_student / temperature_distillation,
+                                                volatile_outputs_student.view(-1)/ temperature_distillation,
                                                 outputsTeacher.view(-1) / temperature_distillation,
                                                 reduce='none'))
             
             loss_masked = weight_teacher_loss * temperature_distillation**2 * partial_dist_loss
 
-            loss_masked += (1-weight_teacher_loss) * torch.mean( volatile_wmap *
+            loss_masked += (1-weight_teacher_loss) * torch.mean( volatile_wmap.view(-1) *
                                                                  F.binary_cross_entropy_with_logits(
                                                                      volatile_outputs_student,
                                                                      volatile_gt,
@@ -327,14 +332,14 @@ def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
         if inverse_idx_distill_loss.size() != torch.Size():
             #if inverse_idx_distill is not empty
 
-            no_dist_wmap = weighted_map.view(-1)[inverse_idx_distill_loss, :]
-            no_dist_outputs_student = outputs.view(-1)[inverse_idx_distill_loss, :]
-            no_dist_gt = gt_patches(-1)[inverse_idx_distill_loss, :]
+            no_dist_wmap = weighted_map[inverse_idx_distill_loss]
+            no_dist_outputs_student = outputs[inverse_idx_distill_loss]
+            no_dist_gt = gt_patches[inverse_idx_distill_loss]
 
-            loss_normal = torch.mean( no_dist_wmap *
+            loss_normal = torch.mean( no_dist_wmap.view(-1) *
                                             F.binary_cross_entropy_with_logits(
-                                                no_dist_outputs_student,
-                                                no_dist_gt,
+                                                no_dist_outputs_student.view(-1),
+                                                no_dist_gt.view(-1),
                                                 reduce='none'))
         else:
             loss_normal = 0
@@ -348,11 +353,10 @@ def bcfind_forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
     loss.backward()
 
     if return_more_info:
-        count_total = inputs.size(0)
-        return loss.data[0], count_asked_teacher, count_total
+        count_total = img_patches.size(0)
+        return loss.data, count_asked_teacher, count_total
     else:
-        return loss.data[0]
-
+        return loss.data
 
 def add_gradient_noise(model, idx_batch, epoch, number_minibatches_per_epoch):
     # Adding random gaussian noise as in the paper "Adding gradient noise improves learning

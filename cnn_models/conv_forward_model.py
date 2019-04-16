@@ -22,6 +22,8 @@ import sklearn.tree
 import sklearn.ensemble
 import sklearn.naive_bayes
 import sklearn.linear_model
+import traceback
+import sys
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -169,14 +171,13 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 bucket_size=None, quantizationFunctionToUse='uniformLinearScaling',
                 backprop_quantization_style='none', estimate_quant_grad_every=1, add_gradient_noise=False,
                 ask_teacher_strategy=('always', None), quantize_first_and_last_layer=True,
-                mix_with_differentiable_quantization=False, loss_function=None, eval_function=None):
+                mix_with_differentiable_quantization=False, loss_function=None, eval_function=None, soma_weight =1):
 
     # backprop_quantization_style determines how to modify the gradients to take into account the
     # quantization function. Specifically, one can use 'none', where gradients are not modified,
     # 'truncated', where gradient values outside -1 and 1 are truncated to 0 (as per the paper
     # specified in the comments) and 'complicated', which is the temp name for my idea which is slow and complicated
     # to compute
-
     if use_distillation_loss is True and teacher_model is None:
         raise ValueError('To compute distillation loss you have to pass the teacher model')
 
@@ -289,11 +290,11 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 model.zero_grad()
 
                 if loss_function:
-                    loss_function(model, data, use_distillation_loss=use_distillation_loss,
+                    print_loss, curr_c_teach, curr_c_total = loss_function(model, data, use_distillation_loss=use_distillation_loss,
                                   teacher_model=teacher_model,
                                   ask_teacher_strategy=ask_teacher_strategy,
                                   temperature_distillation=2,
-                                  return_more_info=True)
+                                  return_more_info=True, soma_weight = soma_weight)
                 else:
                     print_loss, curr_c_teach, curr_c_total = cnn_hf.forward_and_backward(model, data, idx_minibatch, epoch,
                                             use_distillation_loss=use_distillation_loss,
@@ -345,6 +346,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
             losses_epochs.append(last_loss_saved)
 
             if eval_function:
+                print('entrato in eval function')
                 curr_pred_accuracy = eval_function(model, test_loader)
             else:
                 curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
@@ -385,6 +387,9 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
 
     except Exception as e:
         print('An exception occurred: {}\n. Training has been stopped after {} epochs.'.format(e, epoch))
+        exec_info = sys.exc_info()
+        traceback.print_exception(*exec_info)
+        del exec_info
         informationDict['errorFlag'] = True
         informationDict['numEpochsTrained'] = epoch-start_epoch
 

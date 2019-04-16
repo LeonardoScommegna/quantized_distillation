@@ -1,9 +1,11 @@
 from os import path
 import sys
+
+print(path.abspath('../bcfind'))
 sys.path.append(path.abspath('../bcfind'))
-from bcfind.train_deconvolver.models import FC_teacher_max_p
-from bcfind.train_deconvolver.models import FC_student
-from bcfind.train_deconvolver.DataReader import *
+from train_deconvolver.models.FC_teacher_max_p import FC_teacher_max_p
+from train_deconvolver.models.FC_student import FC_student
+from train_deconvolver.data_reader import *
 import os
 import argparse
 import torch
@@ -103,11 +105,13 @@ def get_parser():
                         be stored""")
     parser.add_argument('-first', dest='first_time', action ='store_true',
                         help="pass this argument the first you train a model")
+
     parser.add_argument('--model_manager_save_file', dest = 'model_manger_save_file', type =str,
                         default=None)
-    parser.add_argument('-sn', '--student_name', dest="student_name", type = str,
-                        default=None,
-                        help =""" Name of the student model""")
+
+
+
+
 
     parser.set_defaults(first_time =False)
     return parser
@@ -127,13 +131,15 @@ def main():
     save_file_manger = 'model_manager_bcfind.tst' if not args.model_manger_save_file else args.model_manger_save_file
     bcfind_manager = model_manager.ModelManager(save_file_manger, 'model_manager', create_new_model_manager=args.first_time )
 
+    #non esiste
     save_path = os.path.join(args.models_save_path, args.name_dir)
+
     for x in bcfind_manager.list_models():
         if bcfind_manager.get_num_training_runs(x) >= 1:
             s = '{}; Last prediction acc: {}, Best prediction acc: {}'.format(x,
-                                                                              imagenet_manager.load_metadata(x)[1][
+                                                                              bcfind_manager.load_metadata(x)[1][
                                                                                   'predictionAccuracy'][-1],
-                                                                              max(imagenet_manager.load_metadata(x)[1][
+                                                                              max(bcfind_manager.load_metadata(x)[1][
                                                                                       'predictionAccuracy']))
             print(s)
 
@@ -171,9 +177,13 @@ def main():
 
     student = FC_student(args.initial_filters_student, k_conv=args.kernel_size_student).cuda()
 
-    student_model_name = args.student_name+'{}'.format(args.n_bit)
+    student_model_name = args.name_dir+'{}bit'.format(args.n_bit)
 
+    student_model_path = os.path.join(args.models_save_path, student_model_name)
     distillationOptions = {}
+    if not student_model_name in bcfind_manager.saved_models:
+        bcfind_manager.add_new_model(student_model_name, student_model_path,arguments_creator_function=distillationOptions)
+
 
     bcfind_manager.train_model(student, model_name=student_model_name,
                                train_function=convForwModel.train_model,
@@ -185,7 +195,8 @@ def main():
                                                          'bucket_size': 256,
                                                          'quantize_first_and_last_layer': False,
                                                          'loss_function': bcfind_forward_and_backward,
-                                                         'eval_function': bcfind_evaluateModel
+                                                         'eval_function': bcfind_evaluateModel,
+                                                         'soma_weight': args.soma_weight
                                                          },
                                train_loader=train_loader, test_loader=test_loader)
 
