@@ -345,7 +345,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
             losses_epochs.append(last_loss_saved)
 
             if eval_function:
-                curr_pred_accuracy = eval_function()
+                curr_pred_accuracy = eval_function(model, test_loader)
             else:
                 curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
 
@@ -365,7 +365,11 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 model.load_state_dict(model_state_dict)
                 del model_state_dict  # free memory
                 losses_epochs.append(last_loss_saved)
-                curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
+                if eval_function:
+                    curr_pred_accuracy = eval_function(model, test_loader)
+                else:
+                    curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
+
                 pred_accuracy_epochs.append(curr_pred_accuracy)
                 print(' === Epoch: {} - prediction accuracy {:2f}% === '.format(epoch + 1, curr_pred_accuracy * 100))
 
