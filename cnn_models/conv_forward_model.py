@@ -358,12 +358,14 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 print('=== Starting Differentiable Quantization epoch === ')
                 #the diff quant step is not done at the last epoch, so we end on a quantized distillation epoch
                 model_state_dict = optimize_quantization_points(model, train_loader, test_loader, new_learning_rate,
-                                            initial_momentum=initial_momentum, epochs_to_train=1, print_every=print_every,
-                                            use_nesterov=use_nesterov,
-                                            learning_rate_style=learning_rate_style, numPointsPerTensor=2**numBits,
-                                            assignBitsAutomatically=True, bucket_size=bucket_size,
-                                            use_distillation_loss=True, initialize_method='quantiles',
-                                            quantize_first_and_last_layer=quantize_first_and_last_layer)[0]
+                                                                initial_momentum=initial_momentum, epochs_to_train=1, print_every=print_every,
+                                                                use_nesterov=use_nesterov,
+                                                                learning_rate_style=learning_rate_style, numPointsPerTensor=2**numBits,
+                                                                assignBitsAutomatically=True, bucket_size=bucket_size,
+                                                                use_distillation_loss=True, initialize_method='quantiles',
+                                                                quantize_first_and_last_layer=quantize_first_and_last_layer,
+                                                                loss_function=loss_function, eval_function=eval_function,
+                                                                soma_weight=soma_weight)[0]
                 model.load_state_dict(model_state_dict)
                 del model_state_dict  # free memory
                 losses_epochs.append(last_loss_saved)
