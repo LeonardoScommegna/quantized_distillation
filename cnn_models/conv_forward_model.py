@@ -419,7 +419,7 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
                                  learning_rate_style='generic', numPointsPerTensor=16,
                                  assignBitsAutomatically=False, bucket_size=None,
                                  use_distillation_loss=True, initialize_method='quantiles',
-                                 quantize_first_and_last_layer=True):
+                                 quantize_first_and_last_layer=True, loss_function=None, eval_function=None, soma_weight=1):
 
     print('Preparing training - pre processing tensors')
 
@@ -447,8 +447,18 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
         num_to_estimate_grad = 5
         modelToQuantize.zero_grad()
         for idx_minibatch, batch in enumerate(train_loader, start=1):
-            cnn_hf.forward_and_backward(modelToQuantize, batch, idx_batch=idx_minibatch, epoch=0,
-                                                     use_distillation_loss=False)
+            ###############
+
+            if loss_function:
+                loss_function(modelToQuantize, batch, use_distillation_loss=False,
+                              soma_weight = soma_weight)
+            else:
+                cnn_hf.forward_and_backward(modelToQuantize, batch, idx_batch=idx_minibatch, epoch=0,
+                                            use_distillation_loss=False)
+
+            ###############
+            # cnn_hf.forward_and_backward(modelToQuantize, batch, idx_batch=idx_minibatch, epoch=0,
+            #                                          use_distillation_loss=False)
             if idx_minibatch >= num_to_estimate_grad:
                 break
 
@@ -553,9 +563,21 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
                 #efficient quantization
                 p_quantized.data = quantizationFunctions[currIdx].forward(None, pointsPerTensor[currIdx].data)
 
-            print_loss = cnn_hf.forward_and_backward(quantizedModel, data, idx_minibatch, epoch,
-                                        use_distillation_loss=use_distillation_loss,
-                                        teacher_model=modelToQuantize)
+            ###############
+
+            if loss_function:
+                print_loss = loss_function(quantizedModel, data, use_distillation_loss=use_distillation_loss,
+                                           teacher_model=modelToQuantize,
+                                           soma_weight = soma_weight)
+            else:
+                print_loss = cnn_hf.forward_and_backward(quantizedModel, data, idx_minibatch, epoch,
+                                                         use_distillation_loss=use_distillation_loss,
+                                                         teacher_model=modelToQuantize)
+
+            ###############
+            # print_loss = cnn_hf.forward_and_backward(quantizedModel, data, idx_minibatch, epoch,
+            #                             use_distillation_loss=use_distillation_loss,
+            #                             teacher_model=modelToQuantize)
 
             #now get the gradient of the pointsPerTensor
             for idx, p in enumerate(quantizedModel.parameters()):
@@ -584,7 +606,15 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
                 print_loss_total = 0
 
         losses_epochs.append(last_loss_saved)
-        curr_pred_accuracy = cnn_hf.evaluateModel(quantizedModel, test_loader, fastEvaluation=False)
+        ###############
+
+        if eval_function:
+            curr_pred_accuracy = eval_function(quantizedModel, test_loader)
+        else:
+            curr_pred_accuracy = cnn_hf.evaluateModel(quantizedModel, test_loader, fastEvaluation=False)
+
+        ###############
+        # curr_pred_accuracy = cnn_hf.evaluateModel(quantizedModel, test_loader, fastEvaluation=False)
         pred_accuracy_epochs.append(curr_pred_accuracy)
         print(' === Epoch: {} - prediction accuracy {:2f}% === '.format(epoch + 1, curr_pred_accuracy * 100))
 
