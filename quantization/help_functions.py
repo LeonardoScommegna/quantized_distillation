@@ -122,7 +122,9 @@ def assign_bits_automatically(gradient_norms, inital_bits_to_assign, input_is_po
     #TODO: I don't think the one below works very well with bits, because it is doing a linear proportion. With bits,
     #it should do a logarithmic proportion? To think about it and modify.
 
-    points_or_bits_per_tensor = [y + round(x / sum_gradient_norms * rest_to_assign) for x, y in
+    #todo modificato, era solo round e non torch.round
+
+    points_or_bits_per_tensor = [y + torch.round(x / sum_gradient_norms * rest_to_assign) for x, y in
                           zip(gradient_norms, temp_points_or_bits_per_tensor)]
     diffPointsToAssign = sum(points_or_bits_per_tensor) - total_to_assign
 

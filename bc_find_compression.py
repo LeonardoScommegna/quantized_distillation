@@ -6,6 +6,7 @@ sys.path.append(path.abspath('../bcfind'))
 from train_deconvolver.models.FC_teacher_max_p import FC_teacher_max_p
 from train_deconvolver.models.FC_student import FC_student
 from train_deconvolver.data_reader import *
+#from train_deconvolver.utils import weight_init
 import os
 import argparse
 import torch
@@ -177,6 +178,7 @@ def main():
 
     student = FC_student(args.initial_filters_student, k_conv=args.kernel_size_student).cuda()
 
+
     student_model_name = args.name_dir+'{}bit'.format(args.n_bit)
 
     student_model_path = os.path.join(args.models_save_path, student_model_name)
@@ -185,7 +187,7 @@ def main():
         bcfind_manager.add_new_model(student_model_name, student_model_path,arguments_creator_function=distillationOptions)
 
 
-    bcfind_manager.train_model(student, model_name=student_model_name,
+    bcfind_manager.train_model(teacher, model_name=student_model_name,
                                train_function=convForwModel.train_model,
                                arguments_train_function={'epochs_to_train': args.epochs,
                                                          'use_distillation_loss': True,
@@ -196,7 +198,8 @@ def main():
                                                          'quantize_first_and_last_layer': False,
                                                          'loss_function': bcfind_forward_and_backward,
                                                          'eval_function': bcfind_evaluateModel,
-                                                         'soma_weight': args.soma_weight
+                                                         'soma_weight': args.soma_weight,
+                                                         'mix_with_differentiable_quantization': True
                                                          },
                                train_loader=train_loader, test_loader=test_loader)
 

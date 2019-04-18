@@ -178,6 +178,8 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
     # 'truncated', where gradient values outside -1 and 1 are truncated to 0 (as per the paper
     # specified in the comments) and 'complicated', which is the temp name for my idea which is slow and complicated
     # to compute
+
+    print("Dentro train model")
     if use_distillation_loss is True and teacher_model is None:
         raise ValueError('To compute distillation loss you have to pass the teacher model')
 
@@ -212,6 +214,8 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
             type_of_scaling = 'linear'
         else:
             raise ValueError('The specified quantization function is not present')
+
+        print(backprop_quantization_style)
 
         if backprop_quantization_style is None or backprop_quantization_style in ('none', 'truncated'):
             quantizeFunctions = lambda x: quantization.uniformQuantization(x, s,
@@ -270,6 +274,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
         print_every = number_minibatches_per_epoch // 2
 
     try:
+
         epoch = start_epoch
         for epoch in range(start_epoch, epochs_to_train+start_epoch):
             if mix_with_differentiable_quantization:
@@ -340,13 +345,15 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                         str_to_print += ' Last prediction accuracy: {:2f}%'.format(pred_accuracy_epochs[-1]*100)
                     print(str_to_print)
                     print_loss_total = 0
-
+                ###########
+                #todo rimuovere
+                break
+                ###########
             curr_percentages_asked_teacher = count_asked_teacher/count_asked_total if count_asked_total != 0 else 0
             percentages_asked_teacher.append(curr_percentages_asked_teacher)
             losses_epochs.append(last_loss_saved)
 
             if eval_function:
-                print('entrato in eval function')
                 curr_pred_accuracy = eval_function(model, test_loader)
             else:
                 curr_pred_accuracy = cnn_hf.evaluateModel(model, test_loader, fastEvaluation=False)
@@ -354,7 +361,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
             pred_accuracy_epochs.append(curr_pred_accuracy)
             print(' === Epoch: {} - prediction accuracy {:2f}% === '.format(epoch + 1, curr_pred_accuracy*100))
 
-            if mix_with_dixfferentiable_quantization and epoch != start_epoch + epochs_to_train - 1:
+            if mix_with_differentiable_quantization and epoch != start_epoch + epochs_to_train - 1:
                 print('=== Starting Differentiable Quantization epoch === ')
                 #the diff quant step is not done at the last epoch, so we end on a quantized distillation epoch
                 model_state_dict = optimize_quantization_points(model, train_loader, test_loader, new_learning_rate,
@@ -606,7 +613,7 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
                     str_to_print += '. Last prediction accuracy: {:2f}%'.format(pred_accuracy_epochs[-1] * 100)
                 print(str_to_print)
                 print_loss_total = 0
-
+            break
         losses_epochs.append(last_loss_saved)
         ###############
 

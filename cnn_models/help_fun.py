@@ -1,3 +1,9 @@
+from os import path
+import sys
+
+sys.path.append(path.abspath('../bcfind'))
+
+from train_deconvolver.utils import evaluate_metrics
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -11,6 +17,7 @@ import os
 import warnings
 import argparse
 import torch.nn.functional as F
+
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -61,8 +68,7 @@ def bcfind_evaluateModel(model, testLoader):
                                      ArgumentDefaultsHelpFormatter)
     additional_namespace_arguments(parser)
 
-    args = parser.parse_args()
-
+    args, _ = parser.parse_known_args()
     model.eval()
     precisions = []
     recalls = []
@@ -78,6 +84,7 @@ def bcfind_evaluateModel(model, testLoader):
 
         with torch.set_grad_enabled(False):
             model_output = model(img)
+
             blockPrint()
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
@@ -88,7 +95,8 @@ def bcfind_evaluateModel(model, testLoader):
         precisions.append(precision)
         recalls.append(recall)
         F1s.append(F1)
-
+        #todo rimouvere
+        break
     mean_precision = np.mean(np.array(precisions))
 
     mean_recall = np.mean(np.array(recalls))
