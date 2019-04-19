@@ -171,7 +171,8 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 bucket_size=None, quantizationFunctionToUse='uniformLinearScaling',
                 backprop_quantization_style='none', estimate_quant_grad_every=1, add_gradient_noise=False,
                 ask_teacher_strategy=('always', None), quantize_first_and_last_layer=True,
-                mix_with_differentiable_quantization=False, loss_function=None, eval_function=None, soma_weight =1):
+                mix_with_differentiable_quantization=False, loss_function=None, eval_function=None, soma_weight =1,
+                special_loss = False):
 
     # backprop_quantization_style determines how to modify the gradients to take into account the
     # quantization function. Specifically, one can use 'none', where gradients are not modified,
@@ -299,7 +300,8 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                                   teacher_model=teacher_model,
                                   ask_teacher_strategy=ask_teacher_strategy,
                                   temperature_distillation=2,
-                                  return_more_info=True, soma_weight = soma_weight)
+                                  return_more_info=True, soma_weight = soma_weight,
+                                  special_loss = special_loss)
                 else:
                     print_loss, curr_c_teach, curr_c_total = cnn_hf.forward_and_backward(model, data, idx_minibatch, epoch,
                                             use_distillation_loss=use_distillation_loss,
@@ -372,7 +374,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                                                                 use_distillation_loss=True, initialize_method='quantiles',
                                                                 quantize_first_and_last_layer=quantize_first_and_last_layer,
                                                                 loss_function=loss_function, eval_function=eval_function,
-                                                                soma_weight=soma_weight)[0]
+                                                                soma_weight=soma_weight, special_loss = special_loss)[0]
                 model.load_state_dict(model_state_dict)
                 del model_state_dict  # free memory
                 losses_epochs.append(last_loss_saved)
@@ -428,7 +430,7 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
                                  learning_rate_style='generic', numPointsPerTensor=16,
                                  assignBitsAutomatically=False, bucket_size=None,
                                  use_distillation_loss=True, initialize_method='quantiles',
-                                 quantize_first_and_last_layer=True, loss_function=None, eval_function=None, soma_weight=1):
+                                 quantize_first_and_last_layer=True, loss_function=None, eval_function=None, soma_weight=1, special_loss = False):
 
     print('Preparing training - pre processing tensors')
 
@@ -460,7 +462,7 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
 
             if loss_function:
                 loss_function(modelToQuantize, batch, use_distillation_loss=False,
-                              soma_weight = soma_weight)
+                              soma_weight = soma_weight, special_loss = special_loss)
             else:
                 cnn_hf.forward_and_backward(modelToQuantize, batch, idx_batch=idx_minibatch, epoch=0,
                                             use_distillation_loss=False)
@@ -577,7 +579,7 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
             if loss_function:
                 print_loss = loss_function(quantizedModel, data, use_distillation_loss=use_distillation_loss,
                                            teacher_model=modelToQuantize,
-                                           soma_weight = soma_weight)
+                                           soma_weight = soma_weight, special_loss= special_loss)
             else:
                 print_loss = cnn_hf.forward_and_backward(quantizedModel, data, idx_minibatch, epoch,
                                                          use_distillation_loss=use_distillation_loss,

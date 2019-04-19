@@ -38,6 +38,19 @@ def time_forward_pass(model, train_loader):
     end_time = time.time()
     return end_time - start_time
 
+def get_data_from_batch(batch):
+    img_patches, gt_patches, wmap, no_wmap = batch
+
+    weighted_map = img_patches.clone()
+
+    weighted_map[wmap.byte()] = args.soma_weight
+    weighted_map[no_wmap.byte()] = 0
+
+    weighted_map_temp = weighted_map.clone()
+    weighted_map += 1
+
+    return img_patches, gt_patches, weighted_map
+
 def additional_namespace_arguments(parser):
 
     parser.set_defaults(hi_local_max_radius=6)
@@ -75,7 +88,7 @@ def bcfind_evaluateModel(model, testLoader):
     F1s = []
 
     for idx_minibatch, data in enumerate(testLoader):
-        img, gt, centers_df, img_name   = data 
+        img, gt, centers_df = data
 
         # get the inputs
 
@@ -242,7 +255,7 @@ def forward_and_backward(model, batch, idx_batch, epoch, criterion=None,
 def bcfind_forward_and_backward(model, batch,
                                 use_distillation_loss=False, teacher_model=None,
                                 temperature_distillation=2, ask_teacher_strategy='always',
-                                return_more_info=False, soma_weight =1):
+                                return_more_info=False, soma_weight =1, special_loss = False):
 
     #TODO: return_more_info is just there for backward compatibility. A big refactoring is due here, and there one should
     #remove the return_more_info flag
@@ -252,17 +265,20 @@ def bcfind_forward_and_backward(model, batch,
 
     if not isinstance(ask_teacher_strategy, tuple):
         ask_teacher_strategy = (ask_teacher_strategy, )
-
-    img_patches, gt_patches, mask = batch
+    if special_loss:
+        img_patches, gt_patches, weighted_map = get_data_from_batch(batch)
+    else:
+        img_patches, gt_patches, mask = batch
+        weighted_map = (mask * (soma_weight - 1)) + 1
     # wrap them in Variable
     # inputs, labels = Variable(inputs), Variable(labels)
     if USE_CUDA:
         img_patches = img_patches.cuda()
         gt_patches = gt_patches.cuda()
-        mask = mask.cuda()
+        weighted_map = weighted_map.cuda()
 
     # weighted_map creation -> add guard if use special loss 
-    weighted_map = (mask * (soma_weight-1)) + 1
+
 
     # forward + backward + optimize
     outputs = model(img_patches)

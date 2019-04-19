@@ -110,11 +110,16 @@ def get_parser():
     parser.add_argument('--model_manager_save_file', dest = 'model_manger_save_file', type =str,
                         default=None)
 
-
+    parser.add_argument('--special_loss', dest='special_loss',
+                        action='store_true',
+                        help="""whether to use the training with
+                            a special pixel-wise loss set to true""")
 
 
 
     parser.set_defaults(first_time =False)
+    parser.set_defaults(special_loss=False)
+
     return parser
 
 
@@ -154,22 +159,34 @@ def main():
                                   index_col=0, dtype={"img_name": str})
     patch_size = int(str(pd.read_csv(args.train_csv_path, nrows=1, header=None).
                          take([0])).split("=")[-1])  # workaround
-    train_dataset = DataReaderWeight(args.img_dir, args.gt_dir,
-                                     args.weight_dir,
-                                     train_dataframe, patch_size)
-    train_loader = DataLoader(train_dataset, args.batch_size,
-                              shuffle=True, num_workers=args.n_workers)
-
-    '''Validation/Test Data Loader'''
 
     val_test_dataframe = pd.read_csv(args.val_test_csv_path, comment="#",
                                      index_col=0, dtype={"name": str})
-    test_dataframe = val_test_dataframe[(val_test_dataframe['split'] == 'VAL')]
+    val_dataframe = val_test_dataframe[(val_test_dataframe['split'] == 'VAL')]
 
-    test_dataset = DataReaderSubstackTest(args.img_dir, args.gt_dir, args.marker_dir, test_dataframe)
+    if args.special_loss:
+        train_dataset = DataReader_2map(args.img_dir, args.gt_dir,
+                                        args.weight_dir,
+                                        args.weight_dir,
+                                        train_dataframe, patch_size)
 
-    test_loader = DataLoader(test_dataset, 1, shuffle=False, num_workers=args.n_workers)
 
+    else:
+        train_dataset = DataReaderWeight(args.img_dir, args.gt_dir,
+                                         args.weight_dir,
+                                         train_dataframe, patch_size)
+
+
+
+    train_loader = DataLoader(train_dataset, args.batch_size,
+                              shuffle=True, num_workers=args.n_workers)
+
+    validation_loader = DataLoader(validation_dataset, 1, shuffle=False, num_workers=args.n_workers)
+    validation_dataset = DataReaderSubstack(args.img_dir,
+                                            args.gt_dir,
+                                            args.centers_dir,
+                                            args.weight_dir,
+                                            val_dataframe)
     ''' Teacher and Student networks'''
 
     teacher= FC_teacher_max_p(args.initial_filters_teacher, k_conv=args.kernel_size_teacher).cuda()
@@ -187,7 +204,7 @@ def main():
         bcfind_manager.add_new_model(student_model_name, student_model_path,arguments_creator_function=distillationOptions)
 
 
-    bcfind_manager.train_model(teacher, model_name=student_model_name,
+    bcfind_manager.train_model(student, model_name=student_model_name,
                                train_function=convForwModel.train_model,
                                arguments_train_function={'epochs_to_train': args.epochs,
                                                          'use_distillation_loss': True,
@@ -199,9 +216,10 @@ def main():
                                                          'loss_function': bcfind_forward_and_backward,
                                                          'eval_function': bcfind_evaluateModel,
                                                          'soma_weight': args.soma_weight,
-                                                         'mix_with_differentiable_quantization': True
+                                                         'mix_with_differentiable_quantization': True,
+                                                         'special_loss': args.special_loss
                                                          },
-                               train_loader=train_loader, test_loader=test_loader)
+                               train_loader=train_loader, test_loader=validation_loader)
 
 
 
