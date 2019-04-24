@@ -38,12 +38,12 @@ def time_forward_pass(model, train_loader):
     end_time = time.time()
     return end_time - start_time
 
-def get_data_from_batch(batch):
+def get_data_from_batch(batch,soma_weight):
     img_patches, gt_patches, wmap, no_wmap = batch
 
     weighted_map = img_patches.clone()
 
-    weighted_map[wmap.byte()] = args.soma_weight
+    weighted_map[wmap.byte()] = soma_weight
     weighted_map[no_wmap.byte()] = 0
 
     weighted_map_temp = weighted_map.clone()
@@ -109,7 +109,7 @@ def bcfind_evaluateModel(model, testLoader):
         recalls.append(recall)
         F1s.append(F1)
         #todo rimouvere
-        break
+
     mean_precision = np.mean(np.array(precisions))
 
     mean_recall = np.mean(np.array(recalls))
@@ -266,7 +266,7 @@ def bcfind_forward_and_backward(model, batch,
     if not isinstance(ask_teacher_strategy, tuple):
         ask_teacher_strategy = (ask_teacher_strategy, )
     if special_loss:
-        img_patches, gt_patches, weighted_map = get_data_from_batch(batch)
+        img_patches, gt_patches, weighted_map = get_data_from_batch(batch, soma_weight)
     else:
         img_patches, gt_patches, mask = batch
         weighted_map = (mask * (soma_weight - 1)) + 1

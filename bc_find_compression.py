@@ -184,7 +184,7 @@ def main():
 
     validation_dataset = DataReaderSubstack(args.img_dir,
                                             args.gt_dir,
-                                            args.centers_dir,
+                                            args.marker_dir,
                                             args.weight_dir,
                                             val_dataframe)
     validation_loader = DataLoader(validation_dataset, 1, shuffle=False, num_workers=args.n_workers)
