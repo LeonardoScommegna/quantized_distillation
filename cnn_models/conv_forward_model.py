@@ -349,7 +349,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                     print_loss_total = 0
                 ###########
                 #todo rimuovere
-                break
+
                 ###########
             curr_percentages_asked_teacher = count_asked_teacher/count_asked_total if count_asked_total != 0 else 0
             percentages_asked_teacher.append(curr_percentages_asked_teacher)
@@ -615,7 +615,7 @@ def optimize_quantization_points(modelToQuantize, train_loader, test_loader, ini
                     str_to_print += '. Last prediction accuracy: {:2f}%'.format(pred_accuracy_epochs[-1] * 100)
                 print(str_to_print)
                 print_loss_total = 0
-            break
+
         losses_epochs.append(last_loss_saved)
         ###############
 
