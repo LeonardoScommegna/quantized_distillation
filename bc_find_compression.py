@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from os import path
 import sys
 
@@ -181,12 +182,13 @@ def main():
     train_loader = DataLoader(train_dataset, args.batch_size,
                               shuffle=True, num_workers=args.n_workers)
 
-    validation_loader = DataLoader(validation_dataset, 1, shuffle=False, num_workers=args.n_workers)
     validation_dataset = DataReaderSubstack(args.img_dir,
                                             args.gt_dir,
                                             args.centers_dir,
                                             args.weight_dir,
                                             val_dataframe)
+    validation_loader = DataLoader(validation_dataset, 1, shuffle=False, num_workers=args.n_workers)
+
     ''' Teacher and Student networks'''
 
     teacher= FC_teacher_max_p(args.initial_filters_teacher, k_conv=args.kernel_size_teacher).cuda()
