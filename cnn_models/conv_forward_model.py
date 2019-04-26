@@ -349,7 +349,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                     print_loss_total = 0
                 ###########
                 #todo rimuovere
-                break
+
                 ###########
             curr_percentages_asked_teacher = count_asked_teacher/count_asked_total if count_asked_total != 0 else 0
             percentages_asked_teacher.append(curr_percentages_asked_teacher)
