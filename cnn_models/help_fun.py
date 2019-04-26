@@ -104,7 +104,7 @@ def bcfind_evaluateModel(model, testLoader):
                 precision, recall, F1, TP_inside, FP_inside, FN_inside = evaluate_metrics(
                     sigmoid(model_output).squeeze(0),
                     centers_df.squeeze(0), args)
-
+        enablePrint()
         precisions.append(precision)
         recalls.append(recall)
         F1s.append(F1)
