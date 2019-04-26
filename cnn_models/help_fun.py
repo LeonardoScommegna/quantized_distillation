@@ -88,7 +88,7 @@ def bcfind_evaluateModel(model, testLoader):
     F1s = []
 
     for idx_minibatch, data in enumerate(testLoader):
-        img, gt, centers_df = data
+        img, gt, _, centers_df = data
 
         # get the inputs
 
