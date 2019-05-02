@@ -219,7 +219,8 @@ def main():
                                                          'eval_function': bcfind_evaluateModel,
                                                          'soma_weight': args.soma_weight,
                                                          'mix_with_differentiable_quantization': True,
-                                                         'special_loss': args.special_loss
+                                                         'special_loss': args.special_loss,
+                                                         'models_save_path': student_model_path
                                                          },
                                train_loader=train_loader, test_loader=validation_loader)
 

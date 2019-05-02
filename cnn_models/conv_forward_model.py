@@ -172,7 +172,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 backprop_quantization_style='none', estimate_quant_grad_every=1, add_gradient_noise=False,
                 ask_teacher_strategy=('always', None), quantize_first_and_last_layer=True,
                 mix_with_differentiable_quantization=False, loss_function=None, eval_function=None, soma_weight =1,
-                special_loss = False):
+                special_loss = False, model_save_path=None):
 
     # backprop_quantization_style determines how to modify the gradients to take into account the
     # quantization function. Specifically, one can use 'none', where gradients are not modified,
@@ -386,6 +386,10 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 pred_accuracy_epochs.append(curr_pred_accuracy)
                 print(' === Epoch: {} - prediction accuracy {:2f}% === '.format(epoch + 1, curr_pred_accuracy * 100))
 
+            if model_save_path:
+                torch.save(model.state_dict(),
+                           model_save_path+'_'+str(epoch))
+
 
             #updating the learning rate
             new_learning_rate, stop_training = lr_scheduler.update_learning_rate(epoch, 1-curr_pred_accuracy)
@@ -395,6 +399,7 @@ def train_model(model, train_loader, test_loader, initial_learning_rate = 0.001,
                 try:
                     p['lr'] = new_learning_rate
                 except:pass
+        
 
     except Exception as e:
         print('An exception occurred: {}\n. Training has been stopped after {} epochs.'.format(e, epoch))
