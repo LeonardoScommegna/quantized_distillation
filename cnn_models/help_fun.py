@@ -104,7 +104,7 @@ def bcfind_evaluateModel(model, testLoader):
                 precision, recall, F1, TP_inside, FP_inside, FN_inside = evaluate_metrics(
                     sigmoid(model_output).squeeze(0),
                     centers_df.squeeze(0), args)
-
+        enablePrint()
         precisions.append(precision)
         recalls.append(recall)
         F1s.append(F1)
@@ -256,6 +256,7 @@ def bcfind_forward_and_backward(model, batch,
                                 use_distillation_loss=False, teacher_model=None,
                                 temperature_distillation=2, ask_teacher_strategy='always',
                                 return_more_info=False, soma_weight =1, special_loss = False):
+    sigmoid = nn.Sigmoid()
 
     #TODO: return_more_info is just there for backward compatibility. A big refactoring is due here, and there one should
     #remove the return_more_info flag
@@ -330,7 +331,7 @@ def bcfind_forward_and_backward(model, batch,
             if USE_CUDA:
                 volatile_inputs = volatile_inputs.cuda()
 
-            outputsTeacher = teacher_model(volatile_inputs).detach()
+            outputsTeacher = sigmoid(teacher_model(volatile_inputs).detach())
             volatile_wmap = weighted_map[index_distillation_loss]
             volatile_outputs_student = outputs[index_distillation_loss]
             volatile_gt = gt_patches[index_distillation_loss]
