@@ -191,11 +191,12 @@ def main():
 
     ''' Teacher and Student networks'''
 
-    teacher= FC_teacher_max_p(args.initial_filters_teacher, k_conv=args.kernel_size_teacher).cuda()
+    teacher = FC_teacher_max_p(args.initial_filters_teacher, k_conv=args.kernel_size_teacher).cuda()
 
     teacher.load_state_dict(torch.load(args.teacher_path, map_location=args.device))
 
-    student = FC_student(args.initial_filters_student, k_conv=args.kernel_size_student).cuda()
+    student = FC_teacher_max_p(args.initial_filters_teacher, k_conv=args.kernel_size_teacher).cuda()
+    # student = FC_student(args.initial_filters_student, k_conv=args.kernel_size_student).cuda()
 
 
     student_model_name = args.name_dir+'{}bit'.format(args.n_bit)
@@ -209,7 +210,7 @@ def main():
     bcfind_manager.train_model(student, model_name=student_model_name,
                                train_function=convForwModel.train_model,
                                arguments_train_function={'epochs_to_train': args.epochs,
-                                                         'use_distillation_loss': True,
+                                                         'use_distillation_loss': False,
                                                          'teacher_model': teacher,
                                                          'quantizeWeights': True,
                                                          'numBits': args.n_bit,
@@ -220,7 +221,7 @@ def main():
                                                          'soma_weight': args.soma_weight,
                                                          'mix_with_differentiable_quantization': True,
                                                          'special_loss': args.special_loss,
-                                                         'models_save_path': student_model_path
+                                                         'model_save_path': student_model_path
                                                          },
                                train_loader=train_loader, test_loader=validation_loader)
 
